@@ -330,6 +330,9 @@ def test_operators():
     assert eq(abs(-a), a)
     assert eq(a, +x)
 
+    assert eq(x + a, 2 * x)
+    assert eq(x + b, x + y)
+
 
 def test_field_access():
     x = np.array([(1, 1.0), (2, 2.0)], dtype=[('a', 'i4'), ('b', 'f4')])

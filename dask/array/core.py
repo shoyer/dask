@@ -11,7 +11,7 @@ from collections import Iterator
 from functools import partial, wraps
 from toolz.curried import (identity, pipe, partition, concat, unique, pluck,
         frequencies, join, first, memoize, map, groupby, valmap, accumulate,
-        merge, curry, compose, reduce)
+        merge, curry, compose, reduce, tail)
 import numpy as np
 from . import chunk
 from .slicing import slice_array, insert_many, remove_full_slices
@@ -786,12 +786,29 @@ def from_array(x, blockdims=None, blockshape=None, name=None, **kwargs):
     return Array(dask, name, blockdims=blockdims, dtype=x.dtype)
 
 
+def _broadcast_blockdims(expr_inds, arginds):
+    """ Calculate the blockdims that would result from broadcasting these
+    arguments
+    """
+    # I am not going to pretend that I've thought through the interface for
+    # this function very carefully
+    nameinds = [(a.name, i) for a, i in arginds]
+    blockdim_dict = dict((a.name, a.blockdims) for a, _ in arginds)
+    blockdimss = broadcast_dimensions(nameinds, blockdim_dict)
+    blockdims = tuple(blockdimss[i] for i in expr_inds)
+    return blockdims
+
+
 def atop(func, out, out_ind, *args, **kwargs):
     """ Array object version of dask.array.top """
+    blockdims = kwargs.pop('blockdims', None)
     dtype = kwargs.get('dtype', None)
     arginds = list(partition(2, args)) # [x, ij, y, jk] -> [(x, ij), (y, jk)]
     numblocks = dict([(a.name, a.numblocks) for a, ind in arginds])
     argindsstr = list(concat([(a.name, ind) for a, ind in arginds]))
+
+    if blockdims is None:
+        blockdims = _broadcast_blockdims(out_ind, arginds)
 
     dsk = top(func, out, out_ind, *argindsstr, numblocks=numblocks)
 
@@ -800,10 +817,6 @@ def atop(func, out, out_ind, *args, **kwargs):
     nameinds = [(a.name, i) for a, i in arginds]
     dims = broadcast_dimensions(nameinds, shapes)
     shape = tuple(dims[i] for i in out_ind)
-
-    blockdim_dict = dict((a.name, a.blockdims) for a, _ in arginds)
-    blockdimss = broadcast_dimensions(nameinds, blockdim_dict)
-    blockdims = tuple(blockdimss[i] for i in out_ind)
 
     dsks = [a.dask for a, _ in arginds]
     return Array(merge(dsk, *dsks), out, shape, blockdims=blockdims,
@@ -1114,14 +1127,21 @@ def elemwise(op, *args, **kwargs):
         except AttributeError:
             dt = None
 
+    # This allow array broadcasting along existing dimensions. If non-dask
+    # arrays introduce new dimensions, the elementwise operation will still
+    # fail silently.
+    arginds = [(a, tuple(range(a.ndim)[::-1])) for a in arrays]
+    blockdims = _broadcast_blockdims(expr_inds, arginds)
+    other = [from_array(a, blockdims=tail(blockdims, len(a.shape)))
+             if hasattr(a, 'shape') else a for a in other]
+
     if other:
         op2 = partial_by_order(op, other)
     else:
         op2 = op
 
-    return atop(op2, name, expr_inds,
-                *concat((a, tuple(range(a.ndim)[::-1])) for a in arrays),
-                dtype=dt)
+    return atop(op2, name, expr_inds, *concat(arginds),
+                blockdims=blockdims, dtype=dt)
 
 
 def wrap_elemwise(func, **kwargs):
