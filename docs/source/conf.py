@@ -11,12 +11,46 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
+from __future__ import print_function
+
 import sys, os
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #sys.path.insert(0, os.path.abspath('.'))
+
+
+print("python exec:", sys.executable)
+print("python version:", sys.version)
+print("sys.path:", sys.path)
+try:
+    import numpy
+    print("numpy: %s, %s" % (numpy.__version__, numpy.__file__))
+except ImportError:
+    print("no numpy")
+try:
+    import scipy
+    print("scipy: %s, %s" % (scipy.__version__, scipy.__file__))
+except ImportError:
+    print("no scipy")
+try:
+    import pandas
+    print("pandas: %s, %s" % (pandas.__version__, pandas.__file__))
+except ImportError:
+    print("no pandas")
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    print("matplotlib: %s, %s" % (matplotlib.__version__, matplotlib.__file__))
+except ImportError:
+    print("no matplotlib")
+try:
+    import IPython
+    print("ipython: %s, %s" % (IPython.__version__, IPython.__file__))
+except ImportError:
+    print("no ipython")
+
 
 # -- General configuration -----------------------------------------------------
 
