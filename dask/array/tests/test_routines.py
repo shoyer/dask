@@ -3,7 +3,6 @@ from __future__ import division, print_function, absolute_import
 import itertools
 from numbers import Number
 import textwrap
-import sys
 
 import pytest
 from distutils.version import LooseVersion
@@ -11,8 +10,9 @@ from distutils.version import LooseVersion
 np = pytest.importorskip('numpy')
 
 import dask.array as da
+from dask.compatibility import PY2
 from dask.utils import ignoring
-from dask.array.utils import assert_eq, same_keys
+from dask.array.utils import assert_eq, same_keys, AxisError
 from dask.array.einsumfuncs import einsum_can_optimize
 
 
@@ -265,7 +265,7 @@ def test_tensordot():
                      da.tensordot(a, b, axes=(1, 0)))
 
     # Increasing number of chunks warning
-    with pytest.warns(None if sys.version_info[0] == 2 else da.PerformanceWarning):
+    with pytest.warns(None if PY2 else da.PerformanceWarning):
         assert not same_keys(da.tensordot(a, b, axes=0),
                              da.tensordot(a, b, axes=1))
 
@@ -1296,10 +1296,10 @@ def test_insert():
     with pytest.raises(NotImplementedError):
         da.insert(a, [4, 2], -1, axis=0)
 
-    with pytest.raises(IndexError):
+    with pytest.raises(AxisError):
         da.insert(a, [3], -1, axis=2)
 
-    with pytest.raises(IndexError):
+    with pytest.raises(AxisError):
         da.insert(a, [3], -1, axis=-3)
 
 

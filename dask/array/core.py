@@ -70,6 +70,22 @@ def register_sparse():
     tensordot_lookup.register(sparse.COO, sparse.tensordot)
 
 
+@concatenate_lookup.register_lazy('scipy')
+def register_scipy_sparse():
+    import scipy.sparse
+
+    def _concatenate(L, axis=0):
+        if axis == 0:
+            return scipy.sparse.vstack(L)
+        elif axis == 1:
+            return scipy.sparse.hstack(L)
+        else:
+            msg = ("Can only concatenate scipy sparse matrices for axis in "
+                   "{0, 1}.  Got %s" % axis)
+            raise ValueError(msg)
+    concatenate_lookup.register(scipy.sparse.spmatrix, _concatenate)
+
+
 class PerformanceWarning(Warning):
     """ A warning given when bad chunking may cause poor performance """
 
@@ -1808,13 +1824,6 @@ class Array(DaskMethodsMixin):
         return moment(self, order, axis=axis, dtype=dtype, keepdims=keepdims,
                       ddof=ddof, split_every=split_every, out=out)
 
-    def vnorm(self, ord=None, axis=None, keepdims=False, split_every=None,
-              out=None):
-        """ Vector norm """
-        from .reductions import vnorm
-        return vnorm(self, ord=ord, axis=axis, keepdims=keepdims,
-                     split_every=split_every, out=out)
-
     @wraps(map_blocks)
     def map_blocks(self, func, *args, **kwargs):
         return map_blocks(func, self, *args, **kwargs)
@@ -1872,7 +1881,7 @@ class Array(DaskMethodsMixin):
                [20,  21,  22,  23],
                [24,  25,  26,  27]])
         """
-        from .ghost import map_overlap
+        from .overlap import map_overlap
         return map_overlap(self, func, depth, boundary, trim, **kwargs)
 
     def cumsum(self, axis, dtype=None, out=None):
@@ -2100,6 +2109,8 @@ def normalize_chunks(chunks, shape=None, limit=None, dtype=None,
         chunks = (chunks,) * len(shape)
     if isinstance(chunks, dict):
         chunks = tuple(chunks.get(i, None) for i in range(len(shape)))
+    if isinstance(chunks, np.ndarray):
+        chunks = chunks.tolist()
     if not chunks and shape and all(s == 0 for s in shape):
         chunks = ((0,),) * len(shape)
 
@@ -3370,8 +3381,14 @@ def is_scalar_for_elemwise(arg):
     >>> is_scalar_for_elemwise(np.dtype('i4'))
     True
     """
+    # the second half of shape_condition is essentially just to ensure that
+    # dask series / frame are treated as scalars in elemwise.
+    maybe_shape = getattr(arg, 'shape', None)
+    shape_condition = (not isinstance(maybe_shape, Iterable) or
+                       any(is_dask_collection(x) for x in maybe_shape))
+
     return (np.isscalar(arg) or
-            not isinstance(getattr(arg, 'shape', None), Iterable) or
+            shape_condition or
             isinstance(arg, np.dtype) or
             (isinstance(arg, np.ndarray) and arg.ndim == 0))
 
@@ -3427,7 +3444,14 @@ def elemwise(op, *args, **kwargs):
 
     args = [np.asarray(a) if isinstance(a, (list, tuple)) else a for a in args]
 
-    shapes = [getattr(arg, 'shape', ()) for arg in args]
+    shapes = []
+    for arg in args:
+        shape = getattr(arg, "shape", ())
+        if any(is_dask_collection(x) for x in shape):
+            # Want to excluded Delayed shapes and dd.Scalar
+            shape = ()
+        shapes.append(shape)
+
     shapes = [s if isinstance(s, Iterable) else () for s in shapes]
     out_ndim = len(broadcast_shapes(*shapes))   # Raises ValueError if dimensions mismatch
     expr_inds = tuple(range(out_ndim))[::-1]

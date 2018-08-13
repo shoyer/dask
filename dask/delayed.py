@@ -16,6 +16,7 @@ from .base import tokenize as _tokenize
 from .compatibility import apply
 from .core import quote
 from .context import globalmethod
+from .optimization import cull
 from .utils import funcname, methodcaller, OperatorMethodMixin
 from . import sharedict
 
@@ -269,9 +270,12 @@ def delayed(obj, name=None, pure=None, nout=None, traverse=True):
     AttributeError("'list' object has no attribute 'not_a_real_method'")
 
     "Magic" methods (e.g. operators and attribute access) are assumed to be
-    pure, meaning that subsequent calls must return the same results.  This is
-    not overrideable. To invoke an impure attribute or operator, you'd need to
-    use it in a delayed function with ``pure=False``.
+    pure, meaning that subsequent calls must return the same results. This
+    behavior is not overrideable through the ``delayed`` call, but can be
+    modified using other ways as described below.
+
+    To invoke an impure attribute or operator, you'd need to use it in a
+    delayed function with ``pure=False``:
 
     >>> class Incrementer(object):
     ...     def __init__(self):
@@ -339,6 +343,11 @@ def right(method):
     return _inner
 
 
+def optimize(dsk, keys, **kwargs):
+    dsk2, _ = cull(dsk, keys)
+    return dsk2
+
+
 def rebuild(dsk, key, length):
     return Delayed(key, dsk, length)
 
@@ -367,7 +376,7 @@ class Delayed(DaskMethodsMixin, OperatorMethodMixin):
         return self.key
 
     __dask_scheduler__ = staticmethod(threaded.get)
-    __dask_optimize__ = globalmethod(dont_optimize, key='delayed_optimize')
+    __dask_optimize__ = globalmethod(optimize, key='delayed_optimize')
 
     def __dask_postcompute__(self):
         return single_key, ()

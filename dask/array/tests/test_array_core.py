@@ -19,6 +19,7 @@ from toolz.curried import identity
 import dask
 import dask.array as da
 from dask.base import tokenize, compute_as_if_collection
+from dask.compatibility import PY2
 from dask.delayed import Delayed, delayed
 from dask.utils import ignoring, tmpfile, tmpdir, key_split
 from dask.utils_test import inc, dec
@@ -874,26 +875,6 @@ def test_T():
     a = from_array(x, chunks=(5, 5))
 
     assert_eq(x.T, a.T)
-
-
-def test_norm():
-    a = np.arange(200, dtype='f8').reshape((20, 10))
-    a = a + (a.max() - a) * 1j
-    b = from_array(a, chunks=(5, 5))
-
-    # TODO: Deprecated method, remove test when method removed
-    with pytest.warns(UserWarning):
-        assert_eq(b.vnorm(), np.linalg.norm(a))
-        assert_eq(b.vnorm(ord=1), np.linalg.norm(a.flatten(), ord=1))
-        assert_eq(b.vnorm(ord=4, axis=0), np.linalg.norm(a, ord=4, axis=0))
-        assert b.vnorm(ord=4, axis=0, keepdims=True).ndim == b.ndim
-        split_every = {0: 3, 1: 3}
-        assert_eq(b.vnorm(ord=1, axis=0, split_every=split_every),
-                  np.linalg.norm(a, ord=1, axis=0))
-        assert_eq(b.vnorm(ord=np.inf, axis=0, split_every=split_every),
-                  np.linalg.norm(a, ord=np.inf, axis=0))
-        assert_eq(b.vnorm(ord=np.inf, split_every=split_every),
-                  np.linalg.norm(a.flatten(), ord=np.inf))
 
 
 def test_broadcast_to():
@@ -2052,7 +2033,7 @@ def test_from_array_ndarray_getitem():
 
 @pytest.mark.parametrize(
     'x', [[1, 2], (1, 2), memoryview(b'abc')] +
-    ([buffer(b'abc')] if sys.version_info[0] == 2 else []))  # noqa: F821
+    ([buffer(b'abc')] if PY2 else []))  # noqa: F821
 def test_from_array_list(x):
     """Lists, tuples, and memoryviews are automatically converted to ndarray
     """
@@ -2069,7 +2050,7 @@ def test_from_array_list(x):
 
 @pytest.mark.parametrize(
     'type_', [t for t in np.ScalarType if t not in [memoryview] +
-              ([buffer] if sys.version_info[0] == 2 else [])])  # noqa: F821
+              ([buffer] if PY2 else [])])  # noqa: F821
 def test_from_array_scalar(type_):
     """Python and numpy scalars are automatically converted to ndarray
     """
@@ -3620,11 +3601,30 @@ def test_blocks_indexer():
 
 
 def test_dask_array_holds_scipy_sparse_containers():
-    sparse = pytest.importorskip('scipy.sparse')
+    pytest.importorskip('scipy.sparse')
+    import scipy.sparse
     x = da.random.random((1000, 10), chunks=(100, 10))
     x[x < 0.9] = 0
-    y = x.map_blocks(sparse.csr_matrix)
+    xx = x.compute()
+    y = x.map_blocks(scipy.sparse.csr_matrix)
 
     vs = y.to_delayed().flatten().tolist()
     values = dask.compute(*vs, scheduler='single-threaded')
-    assert all(isinstance(v, sparse.csr_matrix) for v in values)
+    assert all(isinstance(v, scipy.sparse.csr_matrix) for v in values)
+
+    yy = y.compute(scheduler='single-threaded')
+    assert isinstance(yy, scipy.sparse.spmatrix)
+    assert (yy == xx).all()
+
+    z = x.T.map_blocks(scipy.sparse.csr_matrix)
+    zz = z.compute(scheduler='single-threaded')
+    assert isinstance(yy, scipy.sparse.spmatrix)
+    assert (zz == xx.T).all()
+
+
+def test_3851():
+    with warnings.catch_warnings() as record:
+        Y = da.random.random((10, 10), chunks='auto')
+        da.argmax(Y, axis=0).compute()
+
+    assert not record

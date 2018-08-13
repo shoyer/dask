@@ -34,7 +34,7 @@ try:
     except ImportError:
         # Absent for NumPy versions prior to 1.12.
         pass
-    from .reductions import (sum, prod, mean, std, var, any, all, min, max, vnorm,
+    from .reductions import (sum, prod, mean, std, var, any, all, min, max,
                              moment,
                              argmin, argmax,
                              nansum, nanmean, nanstd, nanvar, nanmin,
@@ -46,8 +46,8 @@ try:
         from .reductions import nanprod, nancumprod, nancumsum
     with ignoring(ImportError):
         from . import ma
-    from . import random, linalg, ghost, fft
-    from .ghost import map_overlap
+    from . import random, linalg, overlap, fft
+    from .overlap import map_overlap
     from .wrap import ones, zeros, empty, full
     from .creation import ones_like, zeros_like, empty_like, full_like
     from .rechunk import rechunk
@@ -58,10 +58,13 @@ try:
                            triu, tril, fromfunction, tile, repeat, pad)
     from .gufunc import apply_gufunc, gufunc, as_gufunc
     from .utils import assert_eq
+
+    # TODO: remove this after the deprecation cycle of ghost is complete
+    from . import ghost
+
 except ImportError as e:
     msg = ("Dask array requirements are not installed.\n\n"
            "Please either conda or pip install as follows:\n\n"
            "  conda install dask                 # either conda install\n"
            "  pip install dask[array] --upgrade  # or pip install")
-    e.msg += "\n\n" + msg
-    raise e
+    raise ImportError(str(e) + '\n\n' + msg)
