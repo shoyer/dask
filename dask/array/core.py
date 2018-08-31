@@ -1,8 +1,6 @@
 from __future__ import absolute_import, division, print_function
 
 from bisect import bisect
-from collections import Iterable, Mapping
-from collections import Iterator
 from functools import partial, wraps
 from itertools import product
 import math
@@ -39,8 +37,9 @@ from ..context import globalmethod
 from ..utils import (homogeneous_deepmap, ndeepmap, ignoring, concrete,
                      is_integer, IndexCallable, funcname, derived_from,
                      SerializableLock, ensure_dict, Dispatch, factors,
-                     parse_bytes, has_keyword)
-from ..compatibility import unicode, long, zip_longest, apply
+                     parse_bytes, has_keyword, M)
+from ..compatibility import (unicode, long, zip_longest, apply,
+                             Iterable, Iterator, Mapping)
 from ..core import quote
 from ..delayed import Delayed, to_task_dask
 from .. import threaded, core
@@ -1973,7 +1972,7 @@ class Array(DaskMethodsMixin):
         Copy array.  This is a no-op for dask.arrays, which are immutable
         """
         if self.npartitions == 1:
-            return self.map_blocks(np.copy)
+            return self.map_blocks(M.copy)
         else:
             return Array(self.dask, self.name, self.chunks, self.dtype)
 
@@ -3315,10 +3314,18 @@ def asarray(a):
     >>> da.asarray(y)
     dask.array<array, shape=(2, 3), dtype=int64, chunksize=(2, 3)>
     """
+    try:
+        import dask.dataframe as dd
+        frame_types = (dd.Series, dd.DataFrame)
+    except ImportError:
+        frame_types = ()
+
     if isinstance(a, Array):
         return a
     if isinstance(a, (list, tuple)) and any(isinstance(i, Array) for i in a):
         a = stack(a)
+    elif isinstance(a, frame_types):
+        return a.to_dask_array()
     elif not isinstance(getattr(a, 'shape', None), Iterable):
         a = np.asarray(a)
     return from_array(a, chunks=a.shape, getitem=getter_inline)
