@@ -69,7 +69,7 @@ def sanitize_index(ind):
         return np.asanyarray(nonzero)
     elif np.issubdtype(index_array.dtype, np.integer):
         return index_array
-    elif np.issubdtype(index_array.dtype, float):
+    elif np.issubdtype(index_array.dtype, np.floating):
         int_index = index_array.astype(np.intp)
         if np.allclose(index_array, int_index):
             return int_index
@@ -172,7 +172,7 @@ def slice_with_newaxes(out_name, in_name, blockdims, index):
     where_none = [i for i, ind in enumerate(index) if ind is None]
     where_none_orig = list(where_none)
     for i, x in enumerate(where_none):
-        n = sum(isinstance(ind, int) for ind in index[:x])
+        n = sum(isinstance(ind, Integral) for ind in index[:x])
         if n:
             where_none[i] -= n
 
@@ -391,7 +391,7 @@ def _slice_1d(dim_shape, lengths, index):
             ind = index - chunk_boundaries[i - 1]
         else:
             ind = index
-        return {i: ind}
+        return {int(i): int(ind)}
 
     assert isinstance(index, slice)
 
@@ -992,8 +992,8 @@ def slice_with_bool_dask_array(x, index):
         name = 'getitem-' + tokenize(x, index)
         dsk = {(name, i): k for i, k in enumerate(core.flatten(y.__dask_keys__()))}
         chunks = ((np.nan,) * y.npartitions,)
-        return (Array(sharedict.merge(y.dask, (name, dsk)), name, chunks, x.dtype),
-                out_index)
+        return (Array(sharedict.merge(y.dask, (name, dsk), dependencies={name: {y.name}}),
+                      name, chunks, x.dtype), out_index)
 
     if any(isinstance(ind, Array) and ind.dtype == bool and ind.ndim != 1
            for ind in index):
